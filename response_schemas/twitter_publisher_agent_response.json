@@ -1,0 +1,22 @@
+{
+  "agent_name": "Twitter Publisher Agent",
+  "agent_id": "69995e05746ef9435cac7e1d",
+  "description": "Takes approved thread drafts and posts them to Twitter/X. Handles thread formatting, scheduling, and rate limiting. Reports back posting status and tweet URLs.",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "post_status": "string",
+    "tweet_url": "string",
+    "posted_content": "string",
+    "timestamp": "string",
+    "error_message": "string"
+  },
+  "example_response": {
+    "post_status": "sample string",
+    "tweet_url": "sample string",
+    "posted_content": "sample string",
+    "timestamp": "sample string",
+    "error_message": "sample string"
+  }
+}

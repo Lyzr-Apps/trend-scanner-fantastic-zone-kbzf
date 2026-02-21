@@ -1,0 +1,70 @@
+{
+  "agents": {
+    "trend_intelligence_manager": {
+      "agent_id": "69995e040ab3a50ca24853ef",
+      "name": "Trend Intelligence Manager",
+      "type": "manager",
+      "model": "gpt-4.1",
+      "provider": "OpenAI",
+      "temperature": 0.3,
+      "managed_agents": [
+        "69995dde1b86f70befdb2317",
+        "69995ddf746ef9435cac7e0e",
+        "69995d8abdf6b4ca4c1bedf7"
+      ]
+    },
+    "hn_data_agent": {
+      "agent_id": "69995dde1b86f70befdb2317",
+      "name": "HN Data Agent",
+      "type": "sub-agent",
+      "model": "gpt-4o-mini",
+      "provider": "OpenAI",
+      "temperature": 0.2,
+      "tools": []
+    },
+    "arxiv_research_agent": {
+      "agent_id": "69995ddf746ef9435cac7e0e",
+      "name": "arXiv Research Agent",
+      "type": "sub-agent",
+      "model": "gpt-4o-mini",
+      "provider": "OpenAI",
+      "temperature": 0.2,
+      "tools": [
+        {
+          "tool_name": "ARXIV",
+          "tool_source": "aci",
+          "action_names": ["ARXIV__SEARCH_PAPERS"]
+        }
+      ]
+    },
+    "content_classifier_writer_agent": {
+      "agent_id": "69995d8abdf6b4ca4c1bedf7",
+      "name": "Content Classifier and Writer Agent",
+      "type": "sub-agent",
+      "model": "gpt-4.1",
+      "provider": "OpenAI",
+      "temperature": 0.7,
+      "tools": []
+    },
+    "twitter_publisher_agent": {
+      "agent_id": "69995e05746ef9435cac7e1d",
+      "name": "Twitter Publisher Agent",
+      "type": "independent",
+      "model": "gpt-4o-mini",
+      "provider": "OpenAI",
+      "temperature": 0.1,
+      "tools": [
+        {
+          "tool_name": "twitter",
+          "tool_source": "composio",
+          "action_names": ["TWITTER_CREATION_OF_A_POST"]
+        }
+      ]
+    }
+  },
+  "rag_ids": {},
+  "schedule_ids": {},
+  "workflow_pattern": "manager-subagent-hybrid",
+  "primary_agent_id": "69995e040ab3a50ca24853ef",
+  "independent_agent_id": "69995e05746ef9435cac7e1d"
+}

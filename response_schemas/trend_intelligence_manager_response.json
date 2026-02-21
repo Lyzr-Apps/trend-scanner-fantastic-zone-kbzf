@@ -1,0 +1,114 @@
+{
+  "agent_name": "Trend Intelligence Manager",
+  "agent_id": "69995e040ab3a50ca24853ef",
+  "description": "Coordinates the full intelligence pipeline - routes fetched data through filtering, scoring, classification, and content generation. Aggregates final thread drafts for user review.",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "pipeline_status": "string",
+    "hn_results": {
+      "stories": [
+        {
+          "title": "string",
+          "url": "string",
+          "hn_score": "number",
+          "comments_count": "number",
+          "category": "string",
+          "relevance_score": "number",
+          "summary": "string",
+          "source_type": "string"
+        }
+      ],
+      "total_fetched": "number",
+      "total_filtered": "number"
+    },
+    "arxiv_results": {
+      "papers": [
+        {
+          "title": "string",
+          "authors": "string",
+          "abstract_summary": "string",
+          "arxiv_link": "string",
+          "category": "string",
+          "relevance_score": "number",
+          "novelty_score": "number",
+          "applicability_score": "number"
+        }
+      ],
+      "total_fetched": "number",
+      "total_filtered": "number"
+    },
+    "thread_drafts": [
+      {
+        "id": "string",
+        "title": "string",
+        "classification": "string",
+        "thread_content": "string",
+        "hashtags": "string",
+        "hook": "string",
+        "requires_review": "boolean",
+        "review_reason": "string",
+        "source_url": "string",
+        "relevance_score": "number"
+      }
+    ],
+    "total_drafts": "number",
+    "auto_approved": "number",
+    "flagged_for_review": "number",
+    "scan_timestamp": "string"
+  },
+  "example_response": {
+    "pipeline_status": "sample string",
+    "hn_results": {
+      "stories": [
+        {
+          "title": "sample string",
+          "url": "sample string",
+          "hn_score": 0,
+          "comments_count": 0,
+          "category": "sample string",
+          "relevance_score": 0,
+          "summary": "sample string",
+          "source_type": "sample string"
+        }
+      ],
+      "total_fetched": 0,
+      "total_filtered": 0
+    },
+    "arxiv_results": {
+      "papers": [
+        {
+          "title": "sample string",
+          "authors": "sample string",
+          "abstract_summary": "sample string",
+          "arxiv_link": "sample string",
+          "category": "sample string",
+          "relevance_score": 0,
+          "novelty_score": 0,
+          "applicability_score": 0
+        }
+      ],
+      "total_fetched": 0,
+      "total_filtered": 0
+    },
+    "thread_drafts": [
+      {
+        "id": "sample string",
+        "title": "sample string",
+        "classification": "sample string",
+        "thread_content": "sample string",
+        "hashtags": "sample string",
+        "hook": "sample string",
+        "requires_review": false,
+        "review_reason": "sample string",
+        "source_url": "sample string",
+        "relevance_score": 0
+      }
+    ],
+    "total_drafts": 0,
+    "auto_approved": 0,
+    "flagged_for_review": 0,
+    "scan_timestamp": "sample string"
+  }
+}

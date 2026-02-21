@@ -1,0 +1,67 @@
+{
+  "nodes": [
+    {
+      "id": "input_node",
+      "type": "Input",
+      "label": "User Triggers Intelligence Scan",
+      "nodeCategory": "input"
+    },
+    {
+      "id": "manager_agent",
+      "type": "Agent",
+      "label": "Trend Intelligence Manager",
+      "nodeCategory": "agent",
+      "agent_id": "69995e040ab3a50ca24853ef"
+    },
+    {
+      "id": "hn_agent",
+      "type": "Agent",
+      "label": "HN Data Agent",
+      "nodeCategory": "agent",
+      "agent_id": "69995dde1b86f70befdb2317"
+    },
+    {
+      "id": "arxiv_agent",
+      "type": "Agent",
+      "label": "arXiv Research Agent",
+      "nodeCategory": "agent",
+      "agent_id": "69995ddf746ef9435cac7e0e"
+    },
+    {
+      "id": "classifier_agent",
+      "type": "Agent",
+      "label": "Content Classifier & Writer Agent",
+      "nodeCategory": "agent",
+      "agent_id": "69995d8abdf6b4ca4c1bedf7"
+    },
+    {
+      "id": "content_queue",
+      "type": "Conditional",
+      "label": "Content Queue (Approve & Post)",
+      "nodeCategory": "conditional"
+    },
+    {
+      "id": "twitter_agent",
+      "type": "Agent",
+      "label": "Twitter Publisher Agent",
+      "nodeCategory": "agent",
+      "agent_id": "69995e05746ef9435cac7e1d"
+    },
+    {
+      "id": "output_node",
+      "type": "Output",
+      "label": "Content Published to Twitter/X",
+      "nodeCategory": "end"
+    }
+  ],
+  "edges": [
+    { "source": "input_node", "target": "manager_agent" },
+    { "source": "manager_agent", "target": "hn_agent" },
+    { "source": "manager_agent", "target": "arxiv_agent" },
+    { "source": "hn_agent", "target": "classifier_agent" },
+    { "source": "arxiv_agent", "target": "classifier_agent" },
+    { "source": "classifier_agent", "target": "content_queue" },
+    { "source": "content_queue", "target": "twitter_agent" },
+    { "source": "twitter_agent", "target": "output_node" }
+  ]
+}
