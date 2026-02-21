@@ -127,6 +127,79 @@ const DEFAULT_SETTINGS: AppSettings = {
   blockedDomains: ''
 }
 
+// --- Deep Response Extractor ---
+// The Lyzr API normalizes responses through multiple layers.
+// result.response is a NormalizedAgentResponse with { status, result, message }.
+// The actual schema data can be at:
+//   1) result.response.result directly (ideal)
+//   2) result.response.result wrapped in another { result: ... }
+//   3) result.response.result as stringified JSON in a text/message field
+//   4) result.response itself if normalizeResponse flattened it
+//   5) result.raw_response as a string containing JSON
+// This function walks every possibility and returns the first valid match.
+function extractAgentData<T>(result: any, validatorKey: string): T | null {
+  if (!result) return null
+
+  // Helper: check if obj has the expected key (e.g., "pipeline_status" for Manager, "post_status" for Twitter)
+  const isMatch = (obj: any): boolean => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false
+    return validatorKey in obj
+  }
+
+  // Helper: try to parse a string as JSON
+  const tryParse = (str: any): any => {
+    if (typeof str !== 'string') return null
+    try { return JSON.parse(str) } catch { return null }
+  }
+
+  // Helper: recursively search for the schema within an object (max depth 6)
+  const deepSearch = (obj: any, depth: number = 0): any => {
+    if (depth > 6 || !obj) return null
+    if (typeof obj === 'string') {
+      const parsed = tryParse(obj)
+      if (parsed && isMatch(parsed)) return parsed
+      if (parsed) return deepSearch(parsed, depth + 1)
+      return null
+    }
+    if (typeof obj !== 'object') return null
+    if (isMatch(obj)) return obj
+
+    // Check known wrapper keys
+    const wrapperKeys = ['result', 'response', 'data', 'output', 'content', 'message', 'text', 'raw_response']
+    for (const key of wrapperKeys) {
+      if (obj[key] != null) {
+        const found = deepSearch(obj[key], depth + 1)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  // Path 1: Direct from result.response.result
+  const directResult = result?.response?.result
+  if (isMatch(directResult)) return directResult as T
+
+  // Path 2: Search deeper inside result.response.result
+  const deepInResult = deepSearch(directResult, 0)
+  if (deepInResult) return deepInResult as T
+
+  // Path 3: Search in result.response itself
+  const fromResponse = deepSearch(result?.response, 0)
+  if (fromResponse) return fromResponse as T
+
+  // Path 4: Search in raw_response
+  if (result?.raw_response) {
+    const fromRaw = deepSearch(result.raw_response, 0)
+    if (fromRaw) return fromRaw as T
+  }
+
+  // Path 5: Search the entire result object
+  const fromTopLevel = deepSearch(result, 0)
+  if (fromTopLevel) return fromTopLevel as T
+
+  return null
+}
+
 // --- Sample Data ---
 const SAMPLE_MANAGER_RESPONSE: ManagerResponse = {
   pipeline_status: 'completed',
@@ -390,6 +463,10 @@ export default function Page() {
   // --- Status Messages ---
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
 
+  // --- Debug State ---
+  const [lastRawResponse, setLastRawResponse] = useState<string | null>(null)
+  const [showDebug, setShowDebug] = useState(false)
+
   // Load settings from localStorage
   useEffect(() => {
     try {
@@ -451,26 +528,76 @@ export default function Page() {
       clearTimeout(stepTimer2)
       clearTimeout(stepTimer3)
 
-      if (result.success) {
-        const responseData = result?.response?.result as ManagerResponse
-        setScanData(responseData)
-        setScanStatus('completed')
-        setScanStep(5)
-        setStatusMessage({ type: 'success', text: `Scan complete! Found ${responseData?.total_drafts ?? 0} thread drafts.` })
+      // Capture raw response for debug inspection
+      try {
+        setLastRawResponse(JSON.stringify(result, null, 2).slice(0, 5000))
+      } catch {
+        setLastRawResponse('Could not serialize response')
+      }
 
-        // Auto-approve drafts that meet threshold
-        const autoApproved = new Set<string>()
-        const draftItems = Array.isArray(responseData?.thread_drafts) ? responseData.thread_drafts : []
-        draftItems.forEach(d => {
-          if (!d?.requires_review && (d?.relevance_score ?? 0) >= settings.autoApproveThreshold) {
-            autoApproved.add(d?.id ?? '')
+      if (result.success) {
+        // Use deep extractor to find the Manager response schema regardless of nesting
+        const responseData = extractAgentData<ManagerResponse>(result, 'pipeline_status')
+
+        if (responseData && (Array.isArray(responseData.thread_drafts) || responseData.hn_results || responseData.arxiv_results)) {
+          // Ensure arrays are properly typed even if the agent returned partial data
+          const sanitized: ManagerResponse = {
+            pipeline_status: responseData.pipeline_status ?? 'completed',
+            hn_results: {
+              stories: Array.isArray(responseData.hn_results?.stories) ? responseData.hn_results.stories : [],
+              total_fetched: responseData.hn_results?.total_fetched ?? 0,
+              total_filtered: responseData.hn_results?.total_filtered ?? 0,
+            },
+            arxiv_results: {
+              papers: Array.isArray(responseData.arxiv_results?.papers) ? responseData.arxiv_results.papers : [],
+              total_fetched: responseData.arxiv_results?.total_fetched ?? 0,
+              total_filtered: responseData.arxiv_results?.total_filtered ?? 0,
+            },
+            thread_drafts: Array.isArray(responseData.thread_drafts) ? responseData.thread_drafts.map((d: any, idx: number) => ({
+              id: d?.id ?? `draft-${idx + 1}`,
+              title: d?.title ?? 'Untitled',
+              classification: d?.classification ?? 'TECH DEEP DIVE',
+              thread_content: d?.thread_content ?? '',
+              hashtags: d?.hashtags ?? '',
+              hook: d?.hook ?? '',
+              requires_review: d?.requires_review === true,
+              review_reason: d?.review_reason ?? '',
+              source_url: d?.source_url ?? '',
+              relevance_score: typeof d?.relevance_score === 'number' ? d.relevance_score : 50,
+            })) : [],
+            total_drafts: responseData.total_drafts ?? (Array.isArray(responseData.thread_drafts) ? responseData.thread_drafts.length : 0),
+            auto_approved: responseData.auto_approved ?? 0,
+            flagged_for_review: responseData.flagged_for_review ?? 0,
+            scan_timestamp: responseData.scan_timestamp ?? new Date().toISOString(),
           }
-        })
-        setApprovedDraftIds(autoApproved)
+
+          setScanData(sanitized)
+          setScanStatus('completed')
+          setScanStep(5)
+          setStatusMessage({ type: 'success', text: `Scan complete! Found ${sanitized.total_drafts} thread drafts from ${sanitized.hn_results.stories.length} HN stories and ${sanitized.arxiv_results.papers.length} arXiv papers.` })
+
+          // Auto-approve drafts that meet threshold
+          const autoApproved = new Set<string>()
+          sanitized.thread_drafts.forEach(d => {
+            if (!d.requires_review && d.relevance_score >= settings.autoApproveThreshold) {
+              autoApproved.add(d.id)
+            }
+          })
+          setApprovedDraftIds(autoApproved)
+        } else {
+          // result.success was true but we could not find schema data - try to surface what we got
+          const rawText = typeof result?.response?.message === 'string' ? result.response.message
+            : typeof result?.response?.result === 'string' ? result.response.result
+            : typeof result?.response?.result?.text === 'string' ? result.response.result.text
+            : ''
+          setScanStatus('failed')
+          setScanError(`Agent returned data but no structured pipeline results were found. Raw: ${rawText.slice(0, 300)}`)
+          setStatusMessage({ type: 'error', text: 'Scan returned unstructured data. Try running the scan again.' })
+        }
       } else {
         setScanStatus('failed')
-        setScanError(result?.error ?? 'Unknown error occurred')
-        setStatusMessage({ type: 'error', text: `Scan failed: ${result?.error ?? 'Unknown error'}` })
+        setScanError(result?.error ?? result?.response?.message ?? 'Unknown error occurred')
+        setStatusMessage({ type: 'error', text: `Scan failed: ${result?.error ?? result?.response?.message ?? 'Unknown error'}` })
       }
     } catch (err) {
       clearTimeout(stepTimer1)
@@ -501,24 +628,44 @@ export default function Page() {
       const result = await callAIAgent(message, TWITTER_AGENT_ID)
 
       if (result.success) {
-        const twitterData = result?.response?.result as TwitterResponse
-        setPublishHistory(prev => prev.map(p =>
-          p.draftId === draftId
-            ? { ...p, status: (twitterData?.post_status ?? '') === 'success' ? 'success' as const : 'failed' as const, tweetUrl: twitterData?.tweet_url ?? '', timestamp: twitterData?.timestamp ?? '', errorMessage: twitterData?.error_message ?? '' }
-            : p
-        ))
-        if ((twitterData?.post_status ?? '') === 'success') {
-          setStatusMessage({ type: 'success', text: `Thread "${draft?.title ?? 'Untitled'}" posted successfully!` })
+        // Use deep extractor to find Twitter response schema
+        const twitterData = extractAgentData<TwitterResponse>(result, 'post_status')
+
+        if (twitterData) {
+          const isSuccess = (twitterData.post_status ?? '').toLowerCase() === 'success'
+          setPublishHistory(prev => prev.map(p =>
+            p.draftId === draftId
+              ? { ...p, status: isSuccess ? 'success' as const : 'failed' as const, tweetUrl: twitterData.tweet_url ?? '', timestamp: twitterData.timestamp ?? new Date().toISOString(), errorMessage: twitterData.error_message ?? '' }
+              : p
+          ))
+          if (isSuccess) {
+            setStatusMessage({ type: 'success', text: `Thread "${draft?.title ?? 'Untitled'}" posted successfully!` })
+          } else {
+            setStatusMessage({ type: 'error', text: `Failed to post "${draft?.title ?? 'Untitled'}": ${twitterData.error_message || 'Agent reported failure'}` })
+          }
         } else {
-          setStatusMessage({ type: 'error', text: `Failed to post "${draft?.title ?? 'Untitled'}": ${twitterData?.error_message ?? 'Unknown error'}` })
+          // Agent returned success but no structured Twitter response - check if the tool actually posted
+          // The Composio TWITTER tool may return confirmation in a text message
+          const msgText = result?.response?.message || result?.response?.result?.text || result?.response?.result?.message || ''
+          const looksSuccessful = typeof msgText === 'string' && (msgText.toLowerCase().includes('posted') || msgText.toLowerCase().includes('tweet') || msgText.toLowerCase().includes('success'))
+          setPublishHistory(prev => prev.map(p =>
+            p.draftId === draftId
+              ? { ...p, status: looksSuccessful ? 'success' as const : 'failed' as const, tweetUrl: '', timestamp: new Date().toISOString(), errorMessage: looksSuccessful ? '' : `Unstructured response: ${String(msgText).slice(0, 200)}` }
+              : p
+          ))
+          if (looksSuccessful) {
+            setStatusMessage({ type: 'success', text: `Thread "${draft?.title ?? 'Untitled'}" appears to have been posted. Check your Twitter account.` })
+          } else {
+            setStatusMessage({ type: 'error', text: `Post response unclear for "${draft?.title ?? 'Untitled'}". Check your Twitter account.` })
+          }
         }
       } else {
         setPublishHistory(prev => prev.map(p =>
           p.draftId === draftId
-            ? { ...p, status: 'failed' as const, errorMessage: result?.error ?? 'Unknown error' }
+            ? { ...p, status: 'failed' as const, errorMessage: result?.error ?? result?.response?.message ?? 'Unknown error' }
             : p
         ))
-        setStatusMessage({ type: 'error', text: `Failed to post: ${result?.error ?? 'Unknown error'}` })
+        setStatusMessage({ type: 'error', text: `Failed to post: ${result?.error ?? result?.response?.message ?? 'Unknown error'}` })
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Network error'
@@ -708,9 +855,12 @@ export default function Page() {
                     )}
 
                     {scanStatus === 'failed' && scanError && (
-                      <div className="mt-4 flex items-center gap-2 text-rose-400 text-sm">
-                        <HiOutlineExclamationTriangle className="w-5 h-5" />
-                        {scanError}
+                      <div className="mt-4 bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 text-rose-400 text-sm flex items-start gap-2">
+                        <HiOutlineExclamationTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                        <div className="flex-1 break-words">
+                          <p className="font-medium mb-1">Scan Failed</p>
+                          <p className="text-xs text-rose-300/70">{scanError}</p>
+                        </div>
                       </div>
                     )}
                   </CardContent>
@@ -728,6 +878,26 @@ export default function Page() {
                   <StatCard icon={<HiOutlineDocumentText className="w-5 h-5 text-purple-400" />} label="Thread Drafts" value={totalDrafts} accent="bg-purple-500/10" />
                   <StatCard icon={<HiOutlineExclamationTriangle className="w-5 h-5 text-amber-400" />} label="Flagged for Review" value={flaggedForReview} accent="bg-amber-500/10" />
                 </div>
+              )}
+
+              {/* Debug Panel */}
+              {lastRawResponse && (
+                <Card className="bg-slate-900 border-slate-700/50">
+                  <CardContent className="p-4">
+                    <button
+                      onClick={() => setShowDebug(!showDebug)}
+                      className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1.5 transition-colors"
+                    >
+                      <HiOutlineInformationCircle className="w-3.5 h-3.5" />
+                      {showDebug ? 'Hide' : 'Show'} raw agent response (debug)
+                    </button>
+                    {showDebug && (
+                      <pre className="mt-3 bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-400 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap break-all">
+                        {lastRawResponse}
+                      </pre>
+                    )}
+                  </CardContent>
+                </Card>
               )}
 
               {/* Empty State */}
@@ -1105,7 +1275,11 @@ export default function Page() {
                     </div>
                     <h3 className="text-lg font-semibold text-slate-300 mb-2">No thread drafts</h3>
                     <p className="text-sm text-slate-500 max-w-md">
-                      {data ? 'No drafts match your current filters. Try adjusting classification or review filters.' : 'Run an intelligence scan from the Dashboard to generate thread drafts for review.'}
+                      {data && drafts.length === 0
+                        ? 'The scan completed but no thread drafts were generated. Check the Dashboard debug panel for raw response details, or try running the scan again.'
+                        : data
+                        ? 'No drafts match your current filters. Try adjusting classification or review filters.'
+                        : 'Run an intelligence scan from the Dashboard to generate thread drafts for review.'}
                     </p>
                   </CardContent>
                 </Card>
